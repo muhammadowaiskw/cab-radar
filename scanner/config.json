@@ -1,7 +1,7 @@
 {
   "market": "fut",
   "fallbackToSpot": true,
-  "tfs": ["15m"],
+   "tfs": ["5m"],
   "minVolM": 5,
   "freshBars": 2,
   "directions": "all",
