@@ -3,7 +3,7 @@
   "fallbackToSpot": true,
    "tfs": ["5m"],
   "minVolM": 5,
-  "freshBars": 2,
+  "freshBars": 3,
   "directions": "all",
   "minStage": 0,
   "preset": "balanced",
