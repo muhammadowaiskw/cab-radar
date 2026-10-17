@@ -679,5 +679,49 @@ syncTop();arm();render();scan();
 <script>
 if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{})});}
 </script>
+<script>
+/* Phone alerts: web push setup (button + code to copy) */
+(function(){
+  var VAPID_PUBLIC="BG_Od3CoOVmEviensjEJeJGHzYoB7FfNpcLYOaZmBsb83HP-MWxqnZsrj-rDVYju_AIqSVzML50WOF5mETLkS-g";
+  function u8(b){var p='='.repeat((4-b.length%4)%4),s=(b+p).replace(/-/g,'+').replace(/_/g,'/'),r=atob(s),o=new Uint8Array(r.length);for(var i=0;i<r.length;i++)o[i]=r.charCodeAt(i);return o}
+  var css=document.createElement('style');
+  css.textContent='#pushBtn{position:fixed;left:14px;bottom:14px;z-index:60;border:0;border-radius:999px;padding:10px 16px;font:600 13px var(--sans,system-ui);background:var(--ac,#f0b429);color:#1a1200;box-shadow:0 4px 18px rgba(0,0,0,.35);cursor:pointer}'+
+  '#pushOv{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px}'+
+  '#pushOv.on{display:flex}#pushBox{width:100%;max-width:440px;max-height:90vh;overflow:auto;background:var(--s1,#10131a);color:var(--tx,#e4e8f0);border:1px solid var(--bd2,#2f3748);border-radius:14px;padding:18px;font:13px/1.5 var(--sans,system-ui)}'+
+  '#pushBox h3{font-size:15px;margin-bottom:8px}#pushBox p{margin:8px 0;color:var(--mu,#8a93a6)}#pushBox button{border:1px solid var(--bd2,#2f3748);background:var(--s3,#1c212c);color:var(--tx,#e4e8f0);border-radius:9px;padding:9px 14px;font:600 13px var(--sans,system-ui);margin:4px 6px 4px 0;cursor:pointer}'+
+  '#pushBox button.pri{background:var(--ac,#f0b429);color:#1a1200;border-color:var(--ac,#f0b429)}#pushTa{width:100%;height:120px;margin-top:8px;background:var(--s2,#151922);color:var(--tx,#e4e8f0);border:1px solid var(--bd,#232937);border-radius:9px;padding:8px;font:11px var(--mono,monospace);display:none}#pushMsg{color:var(--tx,#e4e8f0)}';
+  document.head.appendChild(css);
+  var btn=document.createElement('button');btn.id='pushBtn';btn.textContent='\uD83D\uDD14 Phone alerts';document.body.appendChild(btn);
+  var ov=document.createElement('div');ov.id='pushOv';
+  ov.innerHTML='<div id="pushBox"><h3>Phone alerts (app band hone par bhi)</h3>'+
+   '<p>1. Neeche Allow dabayein aur browser ki permission Allow karein.<br>2. Jo code aaye usay Copy karein.<br>3. GitHub me PUSH_SUB secret me paste karein.</p>'+
+   '<button class="pri" id="pushAllow">Allow notifications</button><button id="pushTest">Test</button><button id="pushClose">Close</button>'+
+   '<p id="pushMsg"></p><textarea id="pushTa" readonly></textarea><button class="pri" id="pushCopy" style="display:none">Copy code</button></div>';
+  document.body.appendChild(ov);
+  var $=function(i){return document.getElementById(i)};
+  function msg(t){$('pushMsg').textContent=t}
+  btn.onclick=function(){ov.classList.add('on')};
+  $('pushClose').onclick=function(){ov.classList.remove('on')};
+  $('pushAllow').onclick=async function(){
+    try{
+      if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){msg('Is browser me push support nahi. iPhone par pehle app ko Safari se Home Screen par add karein (iOS 16.4 ya naya), phir wahin se kholein. Android par Chrome use karein.');return}
+      var perm=await Notification.requestPermission();
+      if(perm!=='granted'){msg('Permission nahi mili. Browser/phone settings me is site ke liye Notifications Allow karein, phir dobara try karein.');return}
+      var reg=await navigator.serviceWorker.ready;
+      var sub=await reg.pushManager.getSubscription();
+      if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:u8(VAPID_PUBLIC)});
+      $('pushTa').value=JSON.stringify(sub.toJSON());$('pushTa').style.display='block';$('pushCopy').style.display='inline-block';
+      msg('Ho gaya. Ab Copy code dabayein aur GitHub secret PUSH_SUB me paste karein.');
+    }catch(e){msg('Error: '+(e&&e.message||e))}
+  };
+  $('pushCopy').onclick=async function(){
+    var ta=$('pushTa');
+    try{await navigator.clipboard.writeText(ta.value);msg('Copy ho gaya.')}catch(e){ta.select();ta.setSelectionRange(0,99999);try{document.execCommand('copy');msg('Copy ho gaya.')}catch(_){msg('Text select ho gaya, khud copy kar lein.')}}
+  };
+  $('pushTest').onclick=async function(){
+    try{var reg=await navigator.serviceWorker.ready;await reg.showNotification('CAB Radar',{body:'Test notification theek hai.',icon:'icons/icon-192.png'});msg('Test bhej diya.')}catch(e){msg('Error: '+(e&&e.message||e))}
+  };
+})();
+</script>
 </body>
 </html>

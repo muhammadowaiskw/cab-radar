@@ -24,7 +24,8 @@ const P = Object.assign(
   { atrLen: 14, spreadX: 1.5, volLen: 20, volX: 2, bgLen: 6, bgMin: 4, maxAge: 40, slBuf: .1, rr1: 1.5, rr2: 3, obLook: 10, reqFVG: 1, limitMode: 1 },
   PRESETS[cfg.preset] || {}, cfg.params || {}
 );
-const mk = cfg.market === 'spot' ? 'spot' : 'fut';
+let mk = cfg.market === 'spot' ? 'spot' : 'fut';
+let fellBack = false;
 const tfs = Array.isArray(cfg.tfs) ? cfg.tfs : [cfg.tf || '15m'];
 
 // ---- Binance ----
@@ -76,17 +77,37 @@ function plan(o) {
   return { entry: en, sl, tp1: tp(en, sl, P.rr1) };
 }
 
-// ---- ntfy ----
+// ---- notifications: web push (your own app) and/or ntfy ----
 const repo = process.env.GITHUB_REPOSITORY || '';
 const APP_URL = process.env.APP_URL || (repo ? `https://${repo.split('/')[0].toLowerCase()}.github.io/${repo.split('/')[1]}/` : undefined);
 async function push(title, message, priority = 3, tags = ['bell']) {
+  let ok = 0;
+  const subEnv = (process.env.PUSH_SUB || '').trim();
+  if (subEnv) {
+    if (!process.env.VAPID_PRIVATE_KEY) throw new Error('VAPID_PRIVATE_KEY secret is not set.');
+    const wp = (await import('web-push')).default;
+    wp.setVapidDetails(APP_URL || 'mailto:noreply@example.com', cfg.vapidPublic, process.env.VAPID_PRIVATE_KEY.trim());
+    let subs; try { subs = JSON.parse(subEnv); } catch { throw new Error('PUSH_SUB is not valid JSON. Copy the full code from the app again.'); }
+    if (!Array.isArray(subs)) subs = [subs];
+    for (const s of subs) {
+      try {
+        await wp.sendNotification(s, JSON.stringify({ title, body: message, url: APP_URL || './' }), { TTL: 3600, urgency: priority >= 4 ? 'high' : 'normal' });
+        ok++;
+      } catch (e) {
+        console.error('Web push failed:', e.statusCode || '', (e.body || e.message || '').toString().slice(0, 200));
+        if (e.statusCode === 404 || e.statusCode === 410) console.error('This phone subscription expired. Open the app, tap Phone alerts, allow again and update the PUSH_SUB secret.');
+      }
+    }
+  }
   const topic = process.env.NTFY_TOPIC;
-  if (!topic) throw new Error('NTFY_TOPIC secret is not set (Settings -> Secrets and variables -> Actions).');
-  const server = (process.env.NTFY_SERVER || 'https://ntfy.sh').replace(/\/$/, '');
-  const body = { topic, title, message, priority, tags };
-  if (APP_URL) body.click = APP_URL;
-  const r = await fetch(server + '/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
-  if (!r.ok) throw new Error('ntfy HTTP ' + r.status + ' ' + (await r.text()).slice(0, 200));
+  if (topic) {
+    const server = (process.env.NTFY_SERVER || 'https://ntfy.sh').replace(/\/$/, '');
+    const body = { topic, title, message, priority, tags };
+    if (APP_URL) body.click = APP_URL;
+    const r = await fetch(server + '/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
+    if (r.ok) ok++; else console.error('ntfy HTTP ' + r.status);
+  }
+  if (!ok) throw new Error('No notification could be sent. Set the PUSH_SUB and VAPID_PRIVATE_KEY secrets (see instructions).');
 }
 
 // ---- state (dedupe between runs) ----
@@ -109,10 +130,18 @@ const saveState = () => {
 
   let uni;
   try { uni = await loadUniverse(); }
-  catch (e) {
+  catch (e0) {
+    let e = e0;
+    if (mk === 'fut' && cfg.fallbackToSpot !== false && (e.status === 451 || e.status === 403)) {
+      console.error('Futures blocked from this server, falling back to spot.');
+      mk = 'spot'; fellBack = true;
+      try { uni = await loadUniverse(); e = null; } catch (e2) { e = e2; }
+    }
+    if (!e) { /* ok */ } else {
     console.error('Binance API not reachable: ' + e.message);
     if (e.status === 451 || e.status === 403) console.error('Binance blocks this server location. Set "market" to "spot" in scanner/config.json.');
     process.exit(1);
+    }
   }
   uni = uni.filter(u => u.q >= (cfg.minVolM ?? 5) * 1e6);
 
@@ -145,7 +174,7 @@ const saveState = () => {
   }
 
   if (firstRun && process.env.TEST !== 'true') {
-    await push('CAB Radar · scanner is live', `Watching ${uni.length} ${mk === 'fut' ? 'futures' : 'spot'} pairs on ${tfs.join(', ')}. You will be notified of new fresh signals.`, 3, ['white_check_mark']);
+    await push('CAB Radar · scanner is live', `${fellBack ? '(Spot mode: futures blocked here) ' : ''}Watching ${uni.length} ${mk === 'fut' ? 'futures' : 'spot'} pairs on ${tfs.join(', ')}. You will be notified of new fresh signals.`, 3, ['white_check_mark']);
     console.log('First run: marked current setups as seen, sent start notification.');
   } else if (newOnes.length) {
     newOnes.sort((x, y) => y.stage - x.stage || y.score - x.score);
@@ -155,7 +184,7 @@ const saveState = () => {
     });
     if (newOnes.length > 6) lines.push(`+${newOnes.length - 6} more`);
     const top = newOnes[0];
-    await push(`CAB Radar · ${newOnes.length} fresh signal${newOnes.length > 1 ? 's' : ''}`, lines.join('\n'),
+    await push(`CAB Radar${fellBack ? ' (spot)' : ''} · ${newOnes.length} fresh signal${newOnes.length > 1 ? 's' : ''}`, lines.join('\n'),
       top.stage >= 2 ? 4 : 3, [top.dir === 'buy' ? 'chart_with_upwards_trend' : 'chart_with_downwards_trend']);
     console.log('Notified:\n' + lines.join('\n'));
   } else console.log('No new fresh signals.');

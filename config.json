@@ -1,10 +1,12 @@
 {
   "market": "fut",
+  "fallbackToSpot": true,
   "tfs": ["15m"],
   "minVolM": 5,
   "freshBars": 2,
   "directions": "all",
   "minStage": 0,
   "preset": "balanced",
-  "params": {}
+  "params": {},
+  "vapidPublic": "BG_Od3CoOVmEviensjEJeJGHzYoB7FfNpcLYOaZmBsb83HP-MWxqnZsrj-rDVYju_AIqSVzML50WOF5mETLkS-g"
 }
